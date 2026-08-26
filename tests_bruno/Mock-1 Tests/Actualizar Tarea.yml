@@ -1,0 +1,22 @@
+info:
+  name: Actualizar Tarea
+  type: http
+  seq: 3
+
+http:
+  method: PUT
+  url: http://127.0.0.1:8000/tasks/1
+  body:
+    type: json
+    data: |-
+      {
+        "completed": true
+      }
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false

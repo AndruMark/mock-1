@@ -1,0 +1,17 @@
+# Entorno virtual y dependencias
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Base de datos SQLite local
+*.db
+*.sqlite3
+
+# Variables de entorno
+.env
+
+# Linters y tests
+.pytest_cache/
+.ruff_cache/
