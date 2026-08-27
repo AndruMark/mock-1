@@ -1,11 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import Base, engine
 from app.routers import task_router
 
 # Inicialización del esquema de base de datos
-Base.metadata.create_all(bind=engine)
+# NO (Alembic)
 
 app = FastAPI(
     title="Mock-1 REST API",
