@@ -6,19 +6,30 @@ from app.schemas.task_schema import TaskCreate, TaskUpdate
 
 class TaskService:
     @staticmethod
-    def get_all(db: Session, skip: int = 0, limit: int = 100) -> list[Task]:
-        return db.query(Task).offset(skip).limit(limit).all()
+    def get_all(
+        db: Session, owner_id: int, skip: int = 0, limit: int = 100
+    ) -> list[Task]:
+        return (
+            db.query(Task)
+            .filter(Task.owner_id == owner_id)
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
 
     @staticmethod
-    def get_by_id(db: Session, task_id: int) -> Task | None:
-        return db.query(Task).filter(Task.id == task_id).first()
+    def get_by_id(db: Session, task_id: int, owner_id: int) -> Task | None:
+        return (
+            db.query(Task).filter(Task.id == task_id, Task.owner_id == owner_id).first()
+        )
 
     @staticmethod
-    def create(db: Session, task_data: TaskCreate) -> Task:
+    def create(db: Session, task_data: TaskCreate, owner_id: int) -> Task:
         new_task = Task(
             title=task_data.title,
             description=task_data.description,
             completed=task_data.completed,
+            owner_id=owner_id,
         )
         db.add(new_task)
         db.commit()
@@ -26,8 +37,10 @@ class TaskService:
         return new_task
 
     @staticmethod
-    def update(db: Session, task_id: int, task_data: TaskUpdate) -> Task | None:
-        task = db.query(Task).filter(Task.id == task_id).first()
+    def update(
+        db: Session, task_id: int, task_data: TaskUpdate, owner_id: int
+    ) -> Task | None:
+        task = TaskService.get_by_id(db, task_id=task_id, owner_id=owner_id)
         if not task:
             return None
 
@@ -40,8 +53,8 @@ class TaskService:
         return task
 
     @staticmethod
-    def delete(db: Session, task_id: int) -> bool:
-        task = db.query(Task).filter(Task.id == task_id).first()
+    def delete(db: Session, task_id: int, owner_id: int) -> bool:
+        task = TaskService.get_by_id(db, task_id=task_id, owner_id=owner_id)
         if not task:
             return False
 

@@ -6,10 +6,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.core.security import create_access_token, get_password_hash
 from app.database import Base, get_db
 from app.main import app
+from app.models.user_model import User
 
-# Base de datos SQLite volátil en memoria para testing (aislada de mock1.db)
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 
 engine = create_engine(
@@ -22,7 +23,6 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 
 @pytest.fixture(scope="function")
 def db_session() -> Generator[Session]:
-    """Crea un esquema nuevo en memoria antes de cada test y lo destruye al finalizar."""
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
     try:
@@ -34,8 +34,6 @@ def db_session() -> Generator[Session]:
 
 @pytest.fixture(scope="function")
 def client(db_session: Session) -> Generator[TestClient]:
-    """Sobrescribe la dependencia get_db de FastAPI para redirigirla a la base de pruebas."""
-
     def override_get_db():
         try:
             yield db_session
@@ -46,3 +44,22 @@ def client(db_session: Session) -> Generator[TestClient]:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(scope="function")
+def test_user(db_session: Session) -> User:
+    user = User(
+        email="test@mock1.com",
+        hashed_password=get_password_hash("password123"),
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
+
+
+@pytest.fixture(scope="function")
+def auth_headers(test_user: User) -> dict[str, str]:
+    token = create_access_token(data={"sub": str(test_user.id)})
+    return {"Authorization": f"Bearer {token}"}
