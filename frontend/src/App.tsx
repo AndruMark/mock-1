@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { api } from './services/api';
 import type { Task } from './types/task';
 import type { User } from './types/auth';
@@ -17,6 +17,7 @@ import {
   Lock,
   Mail,
   User as UserIcon,
+  Radio,
 } from 'lucide-react';
 import './App.css';
 
@@ -36,14 +37,17 @@ export default function App() {
   const [authPassword, setAuthPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
-  // Estado de Tareas
+  // Estado de Tareas & Tiempo Real
   const [tasks, setTasks] = useState<Task[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [loading, setLoading] = useState(false);
+  const [wsConnected, setWsConnected] = useState(false);
   const [filter, setFilter] = useState<FilterType>('all');
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const wsRef = useRef<WebSocket | null>(null);
 
   const addToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
     const id = Date.now();
@@ -57,7 +61,7 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Auto-login si ya existe token en localStorage
+  // Verificar sesión existente al arrancar
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
@@ -73,6 +77,54 @@ export default function App() {
         });
     }
   }, []);
+
+  // Sincronización en Tiempo Real mediante WebSockets
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!currentUser || !token) {
+      if (wsRef.current) wsRef.current.close();
+      return;
+    }
+
+    const wsUrl = `ws://127.0.0.1:8000/ws?token=${token}`;
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setWsConnected(true);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload.event === 'TASK_CREATED') {
+          const newTask: Task = payload.payload;
+          setTasks((prev) => {
+            if (prev.some((t) => t.id === newTask.id)) return prev;
+            return [...prev, newTask];
+          });
+          addToast(`Sincronización: Tarea "${newTask.title}" agregada en tiempo real.`, 'info');
+        } else if (payload.event === 'TASK_UPDATED') {
+          const updatedTask: Task = payload.payload;
+          setTasks((prev) => prev.map((t) => (t.id === updatedTask.id ? updatedTask : t)));
+        } else if (payload.event === 'TASK_DELETED') {
+          const deletedId: number = payload.payload.id;
+          setTasks((prev) => prev.filter((t) => t.id !== deletedId));
+          addToast(`Sincronización: Tarea #${deletedId} eliminada desde otra sesión.`, 'info');
+        }
+      } catch (err) {
+        console.error('Error procesando evento WebSocket:', err);
+      }
+    };
+
+    ws.onclose = () => {
+      setWsConnected(false);
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [currentUser]);
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,6 +154,7 @@ export default function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('token');
+    if (wsRef.current) wsRef.current.close();
     setCurrentUser(null);
     setTasks([]);
     addToast('Sesión cerrada correctamente.', 'info');
@@ -124,15 +177,13 @@ export default function App() {
     if (!title.trim()) return;
 
     try {
-      const newTask = await api.createTask({
+      await api.createTask({
         title: title.trim(),
         description: description.trim() || undefined,
         completed: false,
       });
-      setTasks((prev) => [...prev, newTask]);
       setTitle('');
       setDescription('');
-      addToast(`Tarea "${newTask.title}" creada.`);
     } catch {
       addToast('Error al persistir la tarea.', 'error');
     }
@@ -140,13 +191,7 @@ export default function App() {
 
   const handleToggleComplete = async (task: Task) => {
     try {
-      const updated = await api.updateTask(task.id, { completed: !task.completed });
-      setTasks((prev) => prev.map((t) => (t.id === task.id ? updated : t)));
-      addToast(
-        updated.completed
-          ? `Tarea "${task.title}" completada.`
-          : `Tarea "${task.title}" reactivada.`
-      );
+      await api.updateTask(task.id, { completed: !task.completed });
     } catch {
       addToast('Error al actualizar el estado.', 'error');
     }
@@ -156,8 +201,6 @@ export default function App() {
     if (!taskToDelete) return;
     try {
       await api.deleteTask(taskToDelete.id);
-      setTasks((prev) => prev.filter((t) => t.id !== taskToDelete.id));
-      addToast(`Tarea "${taskToDelete.title}" eliminada.`, 'info');
     } catch {
       addToast('Error al eliminar la tarea.', 'error');
     } finally {
@@ -193,7 +236,6 @@ export default function App() {
         ))}
       </div>
 
-      {/* Vista de Login / Register si no está autenticado */}
       {!currentUser ? (
         <div className="auth-card">
           <div className="auth-header">
@@ -256,9 +298,7 @@ export default function App() {
           </form>
         </div>
       ) : (
-        /* Vista de Dashboard cuando está autenticado */
         <>
-          {/* Modal de Borrado */}
           {taskToDelete && (
             <div className="modal-overlay" onClick={() => setTaskToDelete(null)}>
               <div className="modal-card" onClick={(e) => e.stopPropagation()}>
@@ -285,9 +325,15 @@ export default function App() {
           <header className="header">
             <div className="title-section">
               <h1>Mock-1 Dashboard</h1>
-              <div className="user-badge">
-                <UserIcon size={14} />
-                <span>{currentUser.email}</span>
+              <div className="user-badge-group">
+                <div className="user-badge">
+                  <UserIcon size={14} />
+                  <span>{currentUser.email}</span>
+                </div>
+                <div className={`ws-badge ${wsConnected ? 'connected' : 'disconnected'}`}>
+                  <Radio size={12} className={wsConnected ? 'pulse' : ''} />
+                  <span>{wsConnected ? 'En Vivo' : 'Desconectado'}</span>
+                </div>
               </div>
             </div>
             <div className="header-actions">

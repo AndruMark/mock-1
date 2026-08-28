@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import auth_router, task_router
+from app.routers import auth_router, task_router, ws_router
 
 # Inicialización del esquema de base de datos
 # NO (Alembic)
@@ -29,6 +29,7 @@ app.add_middleware(
 # Registro de controladores de ruta
 app.include_router(auth_router.router)
 app.include_router(task_router.router)
+app.include_router(ws_router.router)
 
 
 @app.get("/", tags=["Health"])
