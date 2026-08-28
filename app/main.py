@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 
+from app.core.middleware import RequestTracingMiddleware
 from app.routers import auth_router, task_router, ws_router
 
 # Inicialización del esquema de base de datos
@@ -18,6 +20,7 @@ origins = [
     "http://127.0.0.1:5173",
 ]
 
+# 1. CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -26,7 +29,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Registro de controladores de ruta
+# 2. Middleware de Trazabilidad y Request ID
+app.add_middleware(RequestTracingMiddleware)
+
+# 3. Instrumentación de Métricas Prometheus
+instrumentator = Instrumentator(
+    should_group_status_codes=False,
+    should_ignore_untemplated=True,
+    excluded_handlers=["/metrics", "/docs", "/openapi.json"],
+)
+instrumentator.instrument(app).expose(app, endpoint="/metrics", tags=["Observability"])
+
+# 4. Montaje de Routers
 app.include_router(auth_router.router)
 app.include_router(task_router.router)
 app.include_router(ws_router.router)
